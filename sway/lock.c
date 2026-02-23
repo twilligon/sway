@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <wayland-server-core.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_session_lock_v1.h>
 #include "log.h"
@@ -9,6 +10,7 @@
 #include "sway/output.h"
 #include "sway/server.h"
 #include "sway/lock.h"
+#include "sway-session-lock-config-v1-protocol.h"
 
 struct sway_session_lock_output {
 	struct wlr_scene_tree *tree;
@@ -163,11 +165,13 @@ static struct sway_session_lock_output *session_lock_output_create(
 		return NULL;
 	}
 
+	float bg_alpha = lock->abandoned ? 1.f :
+		(lock->background_transparent ? 0.f : 1.f);
 	struct wlr_scene_rect *background = wlr_scene_rect_create(tree, 0, 0, (float[4]){
 		lock->abandoned ? 1.f : 0.f,
 		0.f,
 		0.f,
-		1.f,
+		bg_alpha,
 	});
 	if (!background) {
 		sway_log(SWAY_ERROR, "failed to allocate a session lock output scene background");
@@ -277,6 +281,9 @@ static void handle_session_lock(struct wl_listener *listener, void *data) {
 		return;
 	}
 
+	sway_lock->lock = lock;
+	sway_lock->background_transparent =
+		server.session_lock.pending_background_transparent;
 	wl_list_init(&sway_lock->outputs);
 
 	sway_log(SWAY_DEBUG, "session locked");
@@ -344,6 +351,55 @@ bool sway_session_lock_has_surface(struct sway_session_lock *lock,
 	return false;
 }
 
+static void lock_update_backgrounds(struct sway_session_lock *lock) {
+	float alpha = lock->background_transparent ? 0.f : 1.f;
+	struct sway_session_lock_output *lock_output;
+	wl_list_for_each(lock_output, &lock->outputs, link) {
+		float color[4] = {
+			lock->abandoned ? 1.f : 0.f,
+			0.f,
+			0.f,
+			lock->abandoned ? 1.f : alpha,
+		};
+		wlr_scene_rect_set_color(lock_output->background, color);
+	}
+}
+
+static void lock_config_handle_destroy(struct wl_client *client,
+		struct wl_resource *resource) {
+	wl_resource_destroy(resource);
+}
+
+static void lock_config_handle_set_background_transparent(
+		struct wl_client *client, struct wl_resource *resource,
+		uint32_t transparent) {
+	bool value = transparent != 0;
+
+	server.session_lock.pending_background_transparent = value;
+
+	struct sway_session_lock *lock = server.session_lock.lock;
+	if (lock && !lock->abandoned) {
+		lock->background_transparent = value;
+		lock_update_backgrounds(lock);
+	}
+}
+
+static const struct sway_session_lock_config_v1_interface lock_config_impl = {
+	.destroy = lock_config_handle_destroy,
+	.set_background_transparent = lock_config_handle_set_background_transparent,
+};
+
+static void lock_config_handle_bind(struct wl_client *client, void *data,
+		uint32_t version, uint32_t id) {
+	struct wl_resource *resource = wl_resource_create(client,
+		&sway_session_lock_config_v1_interface, version, id);
+	if (!resource) {
+		wl_client_post_no_memory(client);
+		return;
+	}
+	wl_resource_set_implementation(resource, &lock_config_impl, NULL, NULL);
+}
+
 void sway_session_lock_init(void) {
 	server.session_lock.manager = wlr_session_lock_manager_v1_create(server.wl_display);
 
@@ -353,4 +409,8 @@ void sway_session_lock_init(void) {
 		&server.session_lock.new_lock);
 	wl_signal_add(&server.session_lock.manager->events.destroy,
 		&server.session_lock.manager_destroy);
+
+	server.session_lock.lock_config_global = wl_global_create(
+		server.wl_display, &sway_session_lock_config_v1_interface, 1,
+		NULL, lock_config_handle_bind);
 }

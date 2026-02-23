@@ -14,6 +14,7 @@ protocols = [
 	'wlr-layer-shell-unstable-v1.xml',
 	'idle.xml',
 	'wlr-output-power-management-unstable-v1.xml',
+	'sway-session-lock-config-v1.xml',
 ]
 
 wl_protos_src = []

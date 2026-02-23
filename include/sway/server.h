@@ -15,6 +15,7 @@ struct sway_session_lock {
 	struct wlr_session_lock_v1 *lock;
 	struct wlr_surface *focused;
 	bool abandoned;
+	bool background_transparent;
 
 	struct wl_list outputs; // struct sway_session_lock_output
 
@@ -93,6 +94,8 @@ struct sway_server {
 	struct {
 		struct sway_session_lock *lock;
 		struct wlr_session_lock_manager_v1 *manager;
+		struct wl_global *lock_config_global;
+		bool pending_background_transparent;
 
 		struct wl_listener new_lock;
 		struct wl_listener manager_destroy;

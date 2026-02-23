@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="sway_session_lock_config_v1">
+  <copyright><![CDATA[
+    Copyright (C) 2025 Sway contributors
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  ]]></copyright>
+
+  <interface name="sway_session_lock_config_v1" version="1">
+    <description summary="configure sway session lock behavior">
+      This sway-specific protocol extension allows a session lock client to
+      configure how the compositor handles the lock screen background.
+
+      By default, the compositor renders an opaque background color behind
+      session lock surfaces to ensure that no unlocked content is visible,
+      as required by the ext-session-lock-v1 specification. This interface
+      allows the lock client to opt out of that opaque background after
+      the session has been locked, enabling transparent or semi-transparent
+      lock surfaces through which the desktop content is visible.
+
+      The security model is as follows: the opaque blanking background is
+      always presented first when a lock is initiated. Only after the lock
+      is established may the client request that the background become
+      transparent. This ensures that unlocked content is never visible
+      during the lock transition, only after the lock client has explicitly
+      opted in to transparency.
+
+      This is a privileged interface.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy this object">
+        Destroys the config object. This does not affect the transparency
+        state of any active session lock.
+      </description>
+    </request>
+
+    <request name="set_background_transparent">
+      <description summary="set lock background transparency">
+        Sets whether the compositor should allow desktop content to be visible
+        behind session lock surfaces.
+
+        When transparent is non-zero, the compositor will not draw an opaque
+        background behind session lock surfaces, allowing desktop content to
+        show through transparent regions of the lock surface.
+
+        When transparent is zero (the default), the compositor draws an opaque
+        background to hide all unlocked content.
+
+        This request takes effect immediately if a session lock is active.
+        If no session lock is currently active, the value is stored and will
+        apply to the next session lock.
+      </description>
+      <arg name="transparent" type="uint" summary="non-zero to allow transparency, zero for opaque"/>
+    </request>
+  </interface>
+</protocol>
