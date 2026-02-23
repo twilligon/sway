@@ -1,0 +1,80 @@
+diff --git a/include/swaylock.h b/include/swaylock.h
+index cd4e73e..30622dd 100644
+--- a/include/swaylock.h
++++ b/include/swaylock.h
+@@ -100,6 +100,7 @@ struct swaylock_state {
+ 	bool run_display, locked;
+ 	struct ext_session_lock_manager_v1 *ext_session_lock_manager_v1;
+ 	struct ext_session_lock_v1 *ext_session_lock_v1;
++	struct sway_session_lock_config_v1 *sway_lock_config;
+ };
+ 
+ struct swaylock_surface {
+diff --git a/main.c b/main.c
+index 07e6667..f20dcc3 100644
+--- a/main.c
++++ b/main.c
+@@ -25,6 +25,7 @@
+ #include "seat.h"
+ #include "swaylock.h"
+ #include "ext-session-lock-v1-client-protocol.h"
++#include "sway-session-lock-config-v1-client-protocol.h"
+ 
+ static uint32_t parse_color(const char *color) {
+ 	if (color[0] == '#') {
+@@ -282,6 +283,9 @@ static void handle_global(void *data, struct wl_registry *registry,
+ 	} else if (strcmp(interface, ext_session_lock_manager_v1_interface.name) == 0) {
+ 		state->ext_session_lock_manager_v1 = wl_registry_bind(registry, name,
+ 				&ext_session_lock_manager_v1_interface, 1);
++	} else if (strcmp(interface, sway_session_lock_config_v1_interface.name) == 0) {
++		state->sway_lock_config = wl_registry_bind(registry, name,
++				&sway_session_lock_config_v1_interface, 1);
+ 	}
+ }
+ 
+@@ -1232,6 +1236,19 @@ int main(int argc, char **argv) {
+ 		}
+ 	}
+ 
++	// If the background color has non-opaque alpha and the compositor
++	// supports our sway-specific protocol, request a transparent background
++	// so desktop content shows through the lock surface.
++	if (state.sway_lock_config &&
++			(state.args.colors.background & 0xff) != 0xff) {
++		swaylock_log(LOG_DEBUG,
++			"Requesting transparent lock background (color alpha=0x%02x)",
++			state.args.colors.background & 0xff);
++		sway_session_lock_config_v1_set_background_transparent(
++			state.sway_lock_config, 1);
++		wl_display_roundtrip(state.display);
++	}
++
+ 	if (state.args.ready_fd >= 0) {
+ 		if (write(state.args.ready_fd, "\n", 1) != 1) {
+ 			swaylock_log(LOG_ERROR, "Failed to send readiness notification");
+@@ -1266,6 +1283,13 @@ int main(int argc, char **argv) {
+ 		loop_poll(state.eventloop);
+ 	}
+ 
++	// Reset transparency before unlocking so the compositor goes back
++	// to opaque blanking for any future lock
++	if (state.sway_lock_config) {
++		sway_session_lock_config_v1_set_background_transparent(
++			state.sway_lock_config, 0);
++		sway_session_lock_config_v1_destroy(state.sway_lock_config);
++	}
+ 	ext_session_lock_v1_unlock_and_destroy(state.ext_session_lock_v1);
+ 	wl_display_roundtrip(state.display);
+ 
+diff --git a/meson.build b/meson.build
+index 144d8a6..99d7d52 100644
+--- a/meson.build
++++ b/meson.build
+@@ -67,6 +67,7 @@ wayland_scanner_client = generator(
+ 
+ client_protocols = [
+ 	wl_protocol_dir / 'staging/ext-session-lock/ext-session-lock-v1.xml',
++	'sway-session-lock-config-v1.xml',
+ ]
+ 
+ protos_src = []
